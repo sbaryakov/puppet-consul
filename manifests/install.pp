@@ -24,7 +24,6 @@ class consul::install {
         $do_notify_service = undef
       }
 
-      include '::archive'
       file { [
         $install_path,
         "${install_path}/consul-${consul::version}"]:
@@ -32,14 +31,37 @@ class consul::install {
         owner  => 'root',
         group  => 0, # 0 instead of root because OS X uses "wheel".
         mode   => '0555';
-      }->
-      archive { "${install_path}/consul-${consul::version}.${consul::download_extension}":
-        ensure       => present,
-        source       => $consul::real_download_url,
-        extract      => true,
-        extract_path => "${install_path}/consul-${consul::version}",
-        creates      => "${install_path}/consul-${consul::version}/consul",
-      }->
+      }
+
+      case $consul::archive_provider {
+          'puppet/archive': {
+            include '::archive'
+            archive {
+              "${install_path}/consul-${consul::version}.${consul::download_extension}":
+                ensure       => present,
+                source       => $consul::real_download_url,
+                extract      => true,
+                extract_path => "${install_path}/consul-${consul::version}",
+                creates      => "${install_path}/consul-${consul::version}/consul",
+                require      => [File[$install_path],
+                                 File["${install_path}/consul-${consul::version}"]]
+            }
+          }
+          'camptocamp/archive': {
+            archive {
+              "${install_path}/consul-${consul::version}.${consul::download_extension}":
+                ensure       => present,
+                src_target   => '/',
+                url          => $consul::real_download_url,
+                target       => "${install_path}/consul-${consul::version}",
+                extension    => 'zip',
+                checksum     => false,
+                require      => [File[$install_path],
+                                 File["${install_path}/consul-${consul::version}"]]
+            }
+          }
+      }
+
       file {
         "${install_path}/consul-${consul::version}/consul":
           owner => 'root',
@@ -64,17 +86,35 @@ class consul::install {
 
         file { "${install_path}/consul-${consul::version}_web_ui":
           ensure => directory,
-        }->
-        archive { "${install_path}/consul_web_ui-${consul::version}.zip":
-          ensure       => present,
-          source       => $consul::real_ui_download_url,
-          extract      => true,
-          extract_path => "${install_path}/consul-${consul::version}_web_ui",
-          creates      => $archive_creates,
-        }->
+        }
+        case $consul::archive_provider {
+          'puppet/archive': {
+            include '::archive'
+            archive { "${install_path}/consul_web_ui-${consul::version}.zip":
+              ensure       => present,
+              source       => $consul::real_ui_download_url,
+              extract      => true,
+              extract_path => "${install_path}/consul-${consul::version}_web_ui",
+              creates      => $archive_creates,
+              require      => File["${install_path}/consul-${consul::version}_web_ui"]
+            }
+          }
+          'camptocamp/archive': {
+            archive { "${install_path}/consul_web_ui-${consul::version}.zip":
+              ensure       => present,
+              src_target   => '/',
+              url          => $consul::real_ui_download_url,
+              target       => "${install_path}",
+              extension    => 'zip',
+              checksum     => false
+            }
+          }
+        }
+
         file { $consul::ui_dir:
-          ensure => 'symlink',
-          target => $ui_symlink_target,
+          ensure  => 'symlink',
+          target  => $ui_symlink_target,
+          require => Archive["${install_path}/consul_web_ui-${consul::version}.zip"]
         }
       }
     }
